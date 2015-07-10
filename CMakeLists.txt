@@ -79,5 +79,13 @@ set(HWLOC_ROOT "C:/hwloc-win64-build-1.9.1")
 # Add the subprojects to our project
 # args are : project name in subproject, path from here
 #--------------------------------------------------
-add_subproject(hpx               hpx)
-add_subproject(vtkm              vtkm)
+set(HPX_WITH_PARCELPORT_MPI ON)
+set(HPX_WITH_PARCELPORT_TCP ON)
+set(HPX_WITH_TESTS          OFF)
+set(HPX_WITH_EXAMPLES       OFF)
+add_subproject(hpx hpx)
+
+set(VTKm_ENABLE_CUDA ON)
+set(VTKm_ENABLE_HPX  ON)
+add_subproject(vtkm vtkm)
+
