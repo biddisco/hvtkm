@@ -24,6 +24,14 @@ cmake_minimum_required(VERSION 2.8)
 set(GIT_EXTERNAL_USER_FORK "" CACHE STRING "")
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitExternal.cmake)
 
+#------------------------------------------------------------------------------
+# Boost 
+#------------------------------------------------------------------------------
+find_package(Boost 1.50.0  REQUIRED 
+   regex date_time serialization 
+  program_options filesystem log log_setup system thread 
+)
+
 #--------------------------------------------------
 # checkout projects we want to build together
 #--------------------------------------------------
@@ -32,7 +40,6 @@ Git_External(
   https://github.com/STEllAR-GROUP/hpx.git
   master
   SHALLOW
-  DISABLE_UPDATE
   VERBOSE
 )
 
@@ -41,7 +48,6 @@ Git_External(
   git@github.com:biddisco/vtkm.git
   hpx-rebase
   SHALLOW
-  DISABLE_UPDATE
   VERBOSE
 )
 
@@ -50,6 +56,7 @@ Git_External(
 #--------------------------------------------------
 include(CTest)
 include(Dart)
+set(DART_TESTING_TIMEOUT "15" CACHE STRING "timeout" FORCE)
 
 #--------------------------------------------------
 # load add_subproject macro from common tools
@@ -79,13 +86,14 @@ set(HWLOC_ROOT "C:/hwloc-win64-build-1.9.1")
 # Add the subprojects to our project
 # args are : project name in subproject, path from here
 #--------------------------------------------------
-set(HPX_WITH_PARCELPORT_MPI ON)
-set(HPX_WITH_PARCELPORT_TCP ON)
-set(HPX_WITH_TESTS          OFF)
-set(HPX_WITH_EXAMPLES       OFF)
+set(HPX_WITH_PARCELPORT_MPI ON CACHE BOOL "")
+set(HPX_WITH_PARCELPORT_TCP ON CACHE BOOL "")
+set(HPX_WITH_TESTS          OFF CACHE BOOL "")
+set(HPX_WITH_EXAMPLES       OFF CACHE BOOL "")
 add_subproject(hpx hpx)
 
-set(VTKm_ENABLE_CUDA ON)
-set(VTKm_ENABLE_HPX  ON)
+set(VTKm_ENABLE_CUDA OFF CACHE BOOL "")
+set(VTKm_ENABLE_HPX  ON CACHE BOOL "")
 add_subproject(vtkm vtkm)
 
+#add_subdirectory(testing)
