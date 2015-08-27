@@ -27,9 +27,18 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitExternal.cmake)
 #------------------------------------------------------------------------------
 # Boost 
 #------------------------------------------------------------------------------
-find_package(Boost 1.50.0  REQUIRED 
-   regex date_time serialization 
-  program_options filesystem log log_setup system thread 
+set(Boost_ADDITIONAL_VERSIONS
+    ${Boost_ADDITIONAL_VERSIONS}
+    "1.59.0" "1.59"
+    "1.58.0" "1.58"
+    "1.57.0" "1.57")
+
+find_package(Boost 
+  1.55  
+  REQUIRED 
+  COMPONENTS
+    regex date_time serialization 
+    program_options filesystem log log_setup system thread 
 )
 
 #--------------------------------------------------
@@ -90,10 +99,22 @@ set(HPX_WITH_PARCELPORT_MPI ON CACHE BOOL "")
 set(HPX_WITH_PARCELPORT_TCP ON CACHE BOOL "")
 set(HPX_WITH_TESTS          OFF CACHE BOOL "")
 set(HPX_WITH_EXAMPLES       OFF CACHE BOOL "")
-add_subproject(hpx hpx)
 
 set(VTKm_ENABLE_CUDA OFF CACHE BOOL "")
 set(VTKm_ENABLE_HPX  ON CACHE BOOL "")
-add_subproject(vtkm vtkm)
+
+# add_subproject <PROJECT_NAME> <DIR>
+set(CMAKE_FIND_DEBUG_MODE 1)
+set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY 1)
+
+add_subproject(HPX hpx)
+message("HPX_FOUND is ${HPX_FOUND}")
+message("CMAKE_PREFIX_PATH is now ${CMAKE_PREFIX_PATH}")
+
+find_package(HPX REQUIRED)
+message("HPX_FOUND is ${HPX_FOUND}")
+
+add_subproject(VTKm vtkm)
+find_package(VTKm REQUIRED)
 
 #add_subdirectory(testing)
