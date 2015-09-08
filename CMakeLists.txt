@@ -90,21 +90,26 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 # Add the subprojects to our project
 # args are : project name in subproject, path from here
 #--------------------------------------------------
+#
+# Some defaults we set for HPX
+#
 set(HPX_WITH_PARCELPORT_MPI ON CACHE BOOL "")
 set(HPX_WITH_PARCELPORT_TCP ON CACHE BOOL "")
 set(HPX_WITH_TESTS          OFF CACHE BOOL "")
 set(HPX_WITH_EXAMPLES       OFF CACHE BOOL "")
+#
+# Some defaults we set for VTK-m
+#
+set(VTKm_ENABLE_CUDA        OFF CACHE BOOL "")
+set(VTKm_ENABLE_HPX         ON CACHE BOOL "")
 
-set(VTKm_ENABLE_CUDA OFF CACHE BOOL "")
-set(VTKm_ENABLE_HPX  ON CACHE BOOL "")
-
-# add_subproject <PROJECT_NAME> <DIR>
 set(CMAKE_FIND_DEBUG_MODE 1)
 set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY 1)
 set(HPX_SKIP_FIND 1)
 set(VTMm_SKIP_FIND 1)
 set(vtkmtest_SKIP_FIND 1)
 
+# add_subproject <PROJECT_NAME> <DIR>
 add_subproject(HPX hpx)
 add_subproject(VTKm vtkm)
 add_subproject(vtkmtest vtkmtest)
