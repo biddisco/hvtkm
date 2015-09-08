@@ -1,3 +1,4 @@
+set(CMAKE_OSX_DEPLOYMENT_TARGET "")
 project(hpx_vtkm)
 
 #--------------------------------------------------
@@ -86,12 +87,6 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 )
 
 #--------------------------------------------------
-# DELETE THESE
-# Custom setting for me to save some time, 
-#--------------------------------------------------
-set(HWLOC_ROOT "C:/hwloc-win64-build-1.9.1")
-
-#--------------------------------------------------
 # Add the subprojects to our project
 # args are : project name in subproject, path from here
 #--------------------------------------------------
@@ -106,15 +101,15 @@ set(VTKm_ENABLE_HPX  ON CACHE BOOL "")
 # add_subproject <PROJECT_NAME> <DIR>
 set(CMAKE_FIND_DEBUG_MODE 1)
 set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY 1)
+set(HPX_SKIP_FIND 1)
+set(VTMm_SKIP_FIND 1)
+set(vtkmtest_SKIP_FIND 1)
 
 add_subproject(HPX hpx)
-message("HPX_FOUND is ${HPX_FOUND}")
-message("CMAKE_PREFIX_PATH is now ${CMAKE_PREFIX_PATH}")
-
-find_package(HPX REQUIRED)
-message("HPX_FOUND is ${HPX_FOUND}")
-
 add_subproject(VTKm vtkm)
-find_package(VTKm REQUIRED)
+add_subproject(vtkmtest vtkmtest)
 
+#--------------------------------------------------
+# Testing
+#--------------------------------------------------
 #add_subdirectory(testing)
