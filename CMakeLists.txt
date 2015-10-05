@@ -108,11 +108,30 @@ set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY 1)
 set(HPX_SKIP_FIND 1)
 set(VTMm_SKIP_FIND 1)
 set(vtkmtest_SKIP_FIND 1)
+set(sort_parallel_SKIP_FIND 1)
+set(sort_hpx_SKIP_FIND 1)
 
 # add_subproject <PROJECT_NAME> <DIR>
+message("-----------------------------")
+message("HPX")
 add_subproject(HPX hpx)
+
+message("-----------------------------")
+message("sort_hpx")
+add_subproject(sort_hpx sort_hpx)
+
+message("-----------------------------")
+message("sort_parallel")
+add_subproject(sort_parallel sort_parallel)
+
+message("-----------------------------")
+message("VTKm")
 add_subproject(VTKm vtkm)
+
+message("-----------------------------")
+message("vtkmtest")
 add_subproject(vtkmtest vtkmtest)
+
 
 #--------------------------------------------------
 # Testing
