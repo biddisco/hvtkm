@@ -107,6 +107,7 @@ set(vtkmtest_SKIP_FIND 1)
 set(sort_parallel_SKIP_FIND 1)
 set(sort_hpx_SKIP_FIND 1)
 set(HPX_sort_SKIP_FIND 1)
+set(hpxsplat_SKIP_FIND 1)
 
 message("-----------------------------")
 message("HPX")
@@ -138,7 +139,12 @@ message("vtkmtest")
 add_subproject(vtkmtest vtkmtest)
 message("-----------------------------")
 
-#--------------------------------------------------
+message("-----------------------------")
+message("hpxsplat")
+add_subproject(hpxsplat hpxsplat)
+message("-----------------------------")
+
+##--------------------------------------------------
 # Testing
 #--------------------------------------------------
-#add_subdirectory(testing)
+add_subdirectory(testing)
