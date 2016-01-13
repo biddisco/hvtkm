@@ -562,6 +562,11 @@ void test_splat()
         });
     }
 
+    hpx::parallel::sort(hpx::parallel::par, ptsArray.begin(), ptsArray.end(),
+        [](const PointType &ptA, const PointType &ptB){
+        return ptA[2] < ptB[2];
+    });
+
     typedef hpx::util::zip_iterator<vit<vtkIdType>, vit<float>> zip_it;
     typedef zip_it::reference zip_ref;
     //
