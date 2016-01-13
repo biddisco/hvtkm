@@ -37,9 +37,23 @@ endif()
 #--------------------------------------------------
 # VTK
 #--------------------------------------------------
-find_package(VTK)
-if (VTK_FOUND)
+find_package(ParaView)
+if (ParaView_FOUND)
+  include(${ParaView_USE_FILE})
   add_definitions(-DHPX_HAVE_VTK)
+  set(VTK_LIBS
+		  vtkTestingRendering
+		  vtkImagingCore
+		  vtkImagingSources
+		  vtkIOImage
+		  vtkFiltersCore
+		  vtkInteractionStyle
+		  vtkParallelMPI
+		  ${VTK_LIBRARIES}
+		  vtksys
+		  mpi
+		  ${MPI_LIBRARIES}
+		  )
 endif()
 
 #--------------------------------------------------
@@ -96,20 +110,6 @@ ADD_EXECUTABLE(TestHPXSplatter
 )
 
 hpx_setup_target(TestHPXSplatter)
-
-if (VTK_FOUND)
-  set(VTK_LIBS
-	  vtkTestingRendering
-	  vtkImagingCore
-	  vtkImagingSources
-	  vtkIOImage
-	  vtkFiltersCore
-	  pv_zoltan
-	  ${VTK_LIBRARIES}
-	  vtksys
-	  ${MPI_LIBRARIES}
-  )  
-endif()
 
 TARGET_LINK_LIBRARIES(TestHPXSplatter
   ${VTK_LIBS}

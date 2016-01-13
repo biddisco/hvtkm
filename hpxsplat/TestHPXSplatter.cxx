@@ -29,13 +29,21 @@
 #include "simple_profiler.hpp"
 
 #ifdef HPX_HAVE_VTK
+# include "vtkPVConfig.h"
 # include <vtkImageData.h>
 # include <vtkSmartPointer.h>
 # include <vtkImageImport.h>
 # include <vtkMarchingCubes.h>
 # include <vtkPolyData.h>
+#include "vtkRenderWindow.h"
+#include "vtkRenderWindowInteractor.h"
+#include "vtkInteractorStyleSwitch.h"
+#include "vtkRenderer.h"
+#include "vtkPolyDataMapper.h"
+#include "vtkMPI.h"
+#include "vtkMPIController.h"
+#include "vtkMPICommunicator.h"
 //
-#include "../testing/TestUtils.h"
 #endif
 //
 #define DEBUG_OUTPUT
@@ -70,6 +78,7 @@ struct options
     unsigned int chunk{0};
     const int kernel_radius = 4;
     const int kernel_scale = 25.0;
+    vtkSmartPointer<vtkMPIController> controller;
 };
 
 options global_options;
@@ -502,10 +511,9 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
 // ----------------------------------------------------------------------------
 void test_splat()
 {
-#ifdef HPX_WITH_VTK
-    TestStruct test_struct;
-    initTest(0, NULL, test_struct);
-#endif
+    MPI_Init(0, NULL);
+    global_options.controller = vtkSmartPointer<vtkMPIController>::New();
+    global_options.controller->Initialize(0, NULL, 1);
 
     // size of final volume (cubed)
     const int volume_size = 256;
@@ -534,8 +542,8 @@ void test_splat()
     // parallel policy, we can use one per algorithm, or share one
     // depending on needs
     int best_chunk_size = global_options.chunk;
-    auto policy = hpx::parallel::par
-        .with(hpx::parallel::static_chunk_size(best_chunk_size));
+    auto policy = hpx::parallel::par;
+//        .with(hpx::parallel::static_chunk_size(best_chunk_size));
 //    auto policy = hpx::parallel::seq;
 
     // array of {x,y,z} points we will use to splat
@@ -550,36 +558,70 @@ void test_splat()
         });
     }
 
-    std::pair<std::vector<vtkIdType>, std::vector<float>> result;
-    {
-        simple_profiler_ptr process = hpx::util::make_profiler(main_loop, "Process");
-        // run the main processor
-        result = ProcessPoints(policy, std::begin(ptsArray), std::end(ptsArray), origin,
-            spacing, dimensions, process);
-    }
-    std::vector<vtkIdType> &voxel_ids = result.first;
-    std::vector<float> &outvalues = result.second;
-
+    typedef hpx::util::zip_iterator<vit<vtkIdType>, vit<float>> zip_it;
+    typedef zip_it::reference zip_ref;
     //
-    {
-        simple_profiler_ptr field_copy = hpx::util::make_profiler(main_loop,
-            "field_copy");
+    vit<PointType> pbegin = std::begin(ptsArray);
+    vit<PointType> pend = std::end(ptsArray);
+    //
+    // create a dummy future we will use as our start result.
+    hpx::future<zip_it> final_future = hpx::make_ready_future<zip_it>(zip_it());
+    //
+    const int numsteps = global_options.chunk;
+    const int stepsize = ptsArray.size() / numsteps;
+    for (int i=0; i<numsteps; i++) {
+        vit<PointType> p0 = pbegin + (i * stepsize);
+        vit<PointType> p1 = (i == numsteps - 1) ? pend : pbegin + (i + 1) * stepsize;
         //
-        typedef hpx::util::zip_iterator<vit<vtkIdType>, vit<float>> zip_it;
-        typedef zip_it::reference zip_ref;
-        //
-        zip_it zbegin = hpx::util::make_zip_iterator(std::begin(voxel_ids),
-            std::begin(outvalues));
-        zip_it zend = hpx::util::make_zip_iterator(std::end(voxel_ids), std::end(outvalues));
-        //
-        hpx::parallel::for_each(policy, zbegin, zend, [&fieldArray](zip_ref ref)
+        typedef std::pair<std::vector<vtkIdType>, std::vector<float>> result_type;
+        result_type result;
         {
-            vtkIdType id = hpx::util::get<0>(ref);
-            float value = hpx::util::get<1>(ref);
-            fieldArray[id] = value;
-        });
-        //fieldArray[half_size + (half_size * volume_size) + (half_size * volume_size * volume_size)] = 10.0;
+            simple_profiler_ptr process = hpx::util::make_profiler(main_loop, "Process");
+            // run the main processor to generate voxel points/values
+            result = std::move(ProcessPoints(policy,
+                p0, p1, origin,
+                spacing, dimensions, process
+            ));
+        }
+        //
+        final_future = final_future.then(
+            std::bind([&main_loop, &fieldArray](
+                    std::vector<vtkIdType> &voxel_ids, std::vector<float> &outvalues,
+                    hpx::future<zip_it> &&f)
+                {
+                    simple_profiler_ptr field_copy = hpx::util::make_profiler(
+                        main_loop, "field_copy"
+                    );
+                    //
+                    f.get();
+                    //
+                    zip_it zbegin = hpx::util::make_zip_iterator(
+                        std::begin(voxel_ids),
+                        std::begin(outvalues));
+                    zip_it zend = hpx::util::make_zip_iterator(
+                        std::end(voxel_ids),
+                        std::end(outvalues));
+                    //
+                    return hpx::parallel::for_each(
+                        hpx::parallel::par(hpx::parallel::task),
+                        zbegin, zend, [&fieldArray](zip_ref ref)
+                        {
+                            vtkIdType id = hpx::util::get<0>(ref);
+                            float value = hpx::util::get<1>(ref);
+                            fieldArray[id] += value;
+                        }
+                    );
+                },
+                std::move(result.first),
+                std::move(result.second),
+                std::placeholders::_1
+            )
+        );
     }
+    //fieldArray[half_size + (half_size * volume_size) + (half_size * volume_size * volume_size)] = 10.0;
+
+    // wait for the final stage to complete
+    final_future.get();
     main_loop->done();
 
     std::cout << "time " << main_timer.elapsed() << " seconds" << std::endl;
@@ -607,9 +649,37 @@ void test_splat()
     // Get a reference to one of the main threads
     hpx::threads::executors::main_pool_executor scheduler;
     // run an async function on the main thread to start the Qt application
-    hpx::future<int> render = hpx::async(scheduler, &TestStruct::RenderPieces,
-        &test_struct, 0, nullptr,
-        vtkPolyData::SafeDownCast(isoSurface->GetOutputDataObject(0)), true);
+    hpx::future<void> render = hpx::async(scheduler, [&isoSurface]() {
+        //
+        vtkSmartPointer<vtkRenderer>                ren = vtkSmartPointer<vtkRenderer>::New();
+        vtkSmartPointer<vtkRenderWindow>      renWindow = vtkSmartPointer<vtkRenderWindow>::New();
+        vtkSmartPointer<vtkRenderWindowInteractor> iren = vtkSmartPointer<vtkRenderWindowInteractor>::New();
+        vtkSmartPointer<vtkInteractorStyleSwitch> style = vtkSmartPointer<vtkInteractorStyleSwitch>::New();
+        iren->SetRenderWindow(renWindow);
+        iren->SetInteractorStyle(style);
+        style->SetCurrentStyleToTrackballCamera();
+        ren->SetBackground(0.1, 0.1, 0.1);
+        renWindow->SetSize(400, 400);
+        renWindow->AddRenderer(ren);
+
+        vtkSmartPointer<vtkPolyDataMapper>       mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+        vtkSmartPointer<vtkActor>                 actor = vtkSmartPointer<vtkActor>::New();
+        mapper->SetInputData(
+                vtkPolyData::SafeDownCast(isoSurface->GetOutputDataObject(0)));
+        mapper->SetImmediateModeRendering(1);
+        mapper->SetScalarModeToUsePointFieldData();
+        mapper->SelectColorArray("");
+        mapper->SetUseLookupTableScalarRange(0);
+        mapper->SetScalarRange(0, 1);
+        mapper->SetInterpolateScalarsBeforeMapping(0);
+        actor->SetMapper(mapper);
+        ren->AddActor(actor);
+        ren->ResetCameraClippingRange();
+        ren->ResetCamera();
+        renWindow->Render();
+        iren->Start();
+    }
+    );
 
     render.wait();
 #endif
