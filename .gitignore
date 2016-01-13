@@ -1,4 +1,10 @@
+.git
+.ptp-sync*
 hpx
 vtkm
 vtkmtest
 testing
+HPX_sort
+sort_hpx
+sort_parallel
+

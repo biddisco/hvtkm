@@ -78,7 +78,9 @@ struct options
     unsigned int chunk{0};
     const int kernel_radius = 4;
     const int kernel_scale = 25.0;
+#ifdef HPX_HAVE_VTK
     vtkSmartPointer<vtkMPIController> controller;
+#endif
 };
 
 options global_options;
@@ -511,9 +513,11 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
 // ----------------------------------------------------------------------------
 void test_splat()
 {
+#ifdef HPX_HAVE_VTK
     MPI_Init(0, NULL);
     global_options.controller = vtkSmartPointer<vtkMPIController>::New();
     global_options.controller->Initialize(0, NULL, 1);
+#endif
 
     // size of final volume (cubed)
     const int volume_size = 256;
