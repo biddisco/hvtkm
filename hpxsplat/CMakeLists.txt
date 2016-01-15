@@ -51,7 +51,6 @@ if (ParaView_FOUND)
 		  vtkParallelMPI
 		  ${VTK_LIBRARIES}
 		  vtksys
-		  mpi
 		  ${MPI_LIBRARIES}
 		  )
 endif()

@@ -145,8 +145,8 @@ namespace hpx {
                 else {
                     valtype &val = _profiles[title];
                     std::get<0>(val) += std::get<0>(value); // time
-                    std::get<1>(val) = std::max(std::get<1>(value),
-                                                std::get<1>(val)); // level
+                    std::get<1>(val) = (std::max)(std::get<1>(value),
+                                        std::get<1>(val)); // level
                     std::get<2>(val) += std::get<2>(value); // count
                 }
             }

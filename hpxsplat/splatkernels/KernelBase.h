@@ -20,6 +20,7 @@
 #ifndef VTKM_KERNELBASE_HPP
 #define VTKM_KERNELBASE_HPP
 
+#define _USE_MATH_DEFINES 
 #include <cmath>
 #include <array>
 

@@ -3,6 +3,7 @@
 //  Distributed under the Boost Software License, Version 1.0. (See accompanying
 //  file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
+#define _USE_MATH_DEFINES 
 #include <hpx/hpx_init.hpp>
 #include <hpx/hpx.hpp>
 #include <hpx/parallel/algorithm.hpp>
@@ -127,9 +128,9 @@ public:
         double cutoff = kernel_.maxDistance(h);
         for (int i = 0; i < 3; i++) {
             splatPoint[i] = (worldcoord[i] - this->origin_[i]) / this->spacing_[i];
-            std::get<0>(minmaxtuple)[i] = std::max(
+            std::get<0>(minmaxtuple)[i] = (std::max)(
                 static_cast<vtkIdType>(ceil(splatPoint[i] - cutoff)), vtkIdType(0));
-            std::get<1>(minmaxtuple)[i] = std::min(
+            std::get<1>(minmaxtuple)[i] = (std::min)(
                 static_cast<vtkIdType>(floor(splatPoint[i] + cutoff)),
                 this->dimension_[i] - 1);
             footprintSize = footprintSize * (1 + std::get<1>(minmaxtuple)[i] -
