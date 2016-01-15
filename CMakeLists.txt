@@ -41,6 +41,9 @@ find_package(Boost
     regex date_time serialization 
     program_options filesystem log log_setup system thread 
 )
+if (WIN32)
+  add_definitions(-DBOOST_ALL_DYN_LINK)
+endif()
 
 #--------------------------------------------------
 # checkout projects we want to build together
