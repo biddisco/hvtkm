@@ -75,7 +75,12 @@ namespace debug {
 // ----------------------------------------------------------------------------
 struct options
 {
-    unsigned int chunk{0};
+    unsigned int seed{12345};
+    unsigned int chains{1};
+    unsigned int fchunk{1000};
+    unsigned int points{10};
+    bool         render{0};
+
     const int kernel_radius = 4;
     const int kernel_scale = 25.0;
 #ifdef HPX_HAVE_VTK
@@ -326,7 +331,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
     {
         simple_profiler_ptr scan = hpx::util::make_profiler(prof, "ScanExclusive");
         exclusive_sum.reserve(N + 1);
-        hpx::parallel::prefix_scan_exclusive(policy, std::begin(neighbour_size),
+        hpx::parallel::exclusive_scan(policy, std::begin(neighbour_size),
             std::end(neighbour_size), std::begin(exclusive_sum), 0);
         total_voxpts += *std::prev(exclusive_sum.end());
         exclusive_sum.push_back(total_voxpts);
@@ -483,7 +488,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
             "inclusive_scan");
 
         std::vector<float> reduced_splat_values = splat_values;
-        hpx::parallel::prefix_scan_inclusive(policy, std::begin(reduced_splat_values),
+        hpx::parallel::inclusive_scan(policy, std::begin(reduced_splat_values),
             std::end(reduced_splat_values), std::begin(reduced_splat_values), 0);
         //debug::output<float>("reduced_splat_values ", reduced_splat_values);
     }
@@ -520,10 +525,10 @@ void test_splat()
 #endif
 
     // size of final volume (cubed)
-    const int volume_size = 256;
+    const int volume_size = 128;
     const int half_size = volume_size / 2;
     // number of points we will create splats for
-    const int N = 5000;
+    const int N = global_options.points;
     // point params
 
     // create a field array to store the data in
@@ -534,8 +539,7 @@ void test_splat()
     Id3Type dimensions = {volume_size, volume_size, volume_size};
 
     // random generator between 0 and volume size
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    std::default_random_engine gen(seed);
+    std::default_random_engine gen(global_options.seed);
     std::uniform_real_distribution<> Dx(0, spacing[0] * (volume_size - 1));
     std::uniform_real_distribution<> Dy(0, spacing[1] * (volume_size - 1));
     std::uniform_real_distribution<> Dz(0, spacing[2] * (volume_size - 1));
@@ -545,7 +549,6 @@ void test_splat()
     simple_profiler_ptr main_loop = hpx::util::make_profiler("Splat");
     // parallel policy, we can use one per algorithm, or share one
     // depending on needs
-    int best_chunk_size = global_options.chunk;
     auto policy = hpx::parallel::par;
 //        .with(hpx::parallel::static_chunk_size(best_chunk_size));
 //    auto policy = hpx::parallel::seq;
@@ -576,7 +579,7 @@ void test_splat()
     // create a dummy future we will use as our start result.
     hpx::future<zip_it> final_future = hpx::make_ready_future<zip_it>(zip_it());
     //
-    const int numsteps = global_options.chunk;
+    const int numsteps = global_options.chains;
     const int stepsize = ptsArray.size() / numsteps;
     for (int i=0; i<numsteps; i++) {
         vit<PointType> p0 = pbegin + (i * stepsize);
@@ -595,7 +598,8 @@ void test_splat()
         //
         final_future = final_future.then(
             std::bind([&main_loop, &fieldArray](
-                    std::vector<vtkIdType> &voxel_ids, std::vector<float> &outvalues,
+                    std::vector<vtkIdType> voxel_ids,
+                    std::vector<float> outvalues,
                     hpx::future<zip_it> &&f)
                 {
                     simple_profiler_ptr field_copy = hpx::util::make_profiler(
@@ -612,7 +616,7 @@ void test_splat()
                         std::end(outvalues));
                     //
                     return hpx::parallel::for_each(
-                        hpx::parallel::par(hpx::parallel::task),
+                        hpx::parallel::par(hpx::parallel::task).with(hpx::parallel::static_chunk_size(global_options.fchunk)),
                         zbegin, zend, [&fieldArray](zip_ref ref)
                         {
                             vtkIdType id = hpx::util::get<0>(ref);
@@ -636,82 +640,109 @@ void test_splat()
     std::cout << "time " << main_timer.elapsed() << " seconds" << std::endl;
 
 #ifdef HPX_HAVE_VTK
-    // Convert the c-style image to a vtkImageData
-    vtkSmartPointer<vtkImageImport> imageImport = vtkSmartPointer<vtkImageImport>::New();
-    imageImport->SetDataSpacing(spacing.data());
-    imageImport->SetDataOrigin(origin.data());
-    imageImport
-        ->SetWholeExtent(0, volume_size - 1, 0, volume_size - 1, 0, volume_size - 1);
-    imageImport->SetDataExtentToWholeExtent();
-    imageImport->SetDataScalarTypeToDouble();
-    imageImport->SetNumberOfScalarComponents(1);
-    imageImport->SetImportVoidPointer(fieldArray.data(), true);
-    imageImport->Update();
+    if (global_options.render) {
+        // Convert the c-style image to a vtkImageData
+        vtkSmartPointer<vtkImageImport> imageImport = vtkSmartPointer<
+            vtkImageImport
+        >::New();
+        imageImport->SetDataSpacing(spacing.data());
+        imageImport->SetDataOrigin(origin.data());
+        imageImport
+            ->SetWholeExtent(0, volume_size - 1, 0, volume_size - 1, 0, volume_size - 1);
+        imageImport->SetDataExtentToWholeExtent();
+        imageImport->SetDataScalarTypeToDouble();
+        imageImport->SetNumberOfScalarComponents(1);
+        imageImport->SetImportVoidPointer(fieldArray.data(), true);
+        imageImport->Update();
 
-    vtkSmartPointer<vtkMarchingCubes> isoSurface = vtkSmartPointer<
-        vtkMarchingCubes
-    >::New();
-    isoSurface->SetValue(0, 0.001);
-    isoSurface->SetInputConnection(imageImport->GetOutputPort());
-    isoSurface->Update();
+        vtkSmartPointer<vtkMarchingCubes> isoSurface = vtkSmartPointer<
+            vtkMarchingCubes
+        >::New();
+        isoSurface->SetValue(0, 0.001);
+        isoSurface->SetInputConnection(imageImport->GetOutputPort());
+        isoSurface->Update();
 
-    // Get a reference to one of the main threads
-    hpx::threads::executors::main_pool_executor scheduler;
-    // run an async function on the main thread to start the Qt application
-    hpx::future<void> render = hpx::async(scheduler, [&isoSurface]() {
-        //
-        vtkSmartPointer<vtkRenderer>                ren = vtkSmartPointer<vtkRenderer>::New();
-        vtkSmartPointer<vtkRenderWindow>      renWindow = vtkSmartPointer<vtkRenderWindow>::New();
-        vtkSmartPointer<vtkRenderWindowInteractor> iren = vtkSmartPointer<vtkRenderWindowInteractor>::New();
-        vtkSmartPointer<vtkInteractorStyleSwitch> style = vtkSmartPointer<vtkInteractorStyleSwitch>::New();
-        iren->SetRenderWindow(renWindow);
-        iren->SetInteractorStyle(style);
-        style->SetCurrentStyleToTrackballCamera();
-        ren->SetBackground(0.1, 0.1, 0.1);
-        renWindow->SetSize(400, 400);
-        renWindow->AddRenderer(ren);
+        // Get a reference to one of the main threads
+        hpx::threads::executors::main_pool_executor scheduler;
+        // run an async function on the main thread to start the Qt application
+        hpx::future<void> render = hpx::async(scheduler, [&isoSurface]()
+        {
+            //
+            vtkSmartPointer<vtkRenderer> ren = vtkSmartPointer<vtkRenderer>::New();
+            vtkSmartPointer<vtkRenderWindow> renWindow = vtkSmartPointer<
+                vtkRenderWindow
+            >::New();
+            vtkSmartPointer<vtkRenderWindowInteractor> iren = vtkSmartPointer<
+                vtkRenderWindowInteractor
+            >::New();
+            vtkSmartPointer<vtkInteractorStyleSwitch> style = vtkSmartPointer<
+                vtkInteractorStyleSwitch
+            >::New();
+            iren->SetRenderWindow(renWindow);
+            iren->SetInteractorStyle(style);
+            style->SetCurrentStyleToTrackballCamera();
+            ren->SetBackground(0.1, 0.1, 0.1);
+            renWindow->SetSize(400, 400);
+            renWindow->AddRenderer(ren);
 
-        vtkSmartPointer<vtkPolyDataMapper>       mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-        vtkSmartPointer<vtkActor>                 actor = vtkSmartPointer<vtkActor>::New();
-        mapper->SetInputData(
+            vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<
+                vtkPolyDataMapper
+            >::New();
+            vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
+            mapper->SetInputData(
                 vtkPolyData::SafeDownCast(isoSurface->GetOutputDataObject(0)));
-        mapper->SetImmediateModeRendering(1);
-        mapper->SetScalarModeToUsePointFieldData();
-        mapper->SelectColorArray("");
-        mapper->SetUseLookupTableScalarRange(0);
-        mapper->SetScalarRange(0, 1);
-        mapper->SetInterpolateScalarsBeforeMapping(0);
-        actor->SetMapper(mapper);
-        ren->AddActor(actor);
-        ren->ResetCameraClippingRange();
-        ren->ResetCamera();
-        renWindow->Render();
-        iren->Start();
-    }
-    );
+            mapper->SetImmediateModeRendering(1);
+            mapper->SetScalarModeToUsePointFieldData();
+            mapper->SelectColorArray("");
+            mapper->SetUseLookupTableScalarRange(0);
+            mapper->SetScalarRange(0, 1);
+            mapper->SetInterpolateScalarsBeforeMapping(0);
+            actor->SetMapper(mapper);
+            ren->AddActor(actor);
+            ren->ResetCameraClippingRange();
+            ren->ResetCamera();
+            renWindow->Render();
+            iren->Start();
+        }
+        );
 
-    render.wait();
+        render.wait();
+    }
 #endif
 }
 
 // ----------------------------------------------------------------------------
 int hpx_main(boost::program_options::variables_map &vm)
 {
-    unsigned int seed = (unsigned int) std::time(0);
+    global_options.seed = (unsigned int) std::time(0);
     if (vm.count("seed"))
-        seed = vm["seed"].as < unsigned
+        global_options.seed = vm["seed"].as < unsigned
     int > ();
+    std::cout << "using seed: " << global_options.seed << std::endl;
+    std::srand(global_options.seed);
 
-    std::cout << "using seed: " << seed << std::endl;
-    std::srand(seed);
-
-    unsigned int chunk = 0;
-    if (vm.count("chunk"))
-        chunk = vm["chunk"].as < unsigned
+    global_options.points = 10;
+    if (vm.count("points"))
+        global_options.points = vm["points"].as < unsigned
     int > ();
+    std::cout << "using points: " << global_options.points << std::endl;
 
-    std::cout << "using chunk: " << chunk << std::endl;
-    global_options.chunk = chunk;
+    global_options.chains = 1;
+    if (vm.count("chains"))
+        global_options.chains = vm["chains"].as < unsigned
+    int > ();
+    std::cout << "using chains: " << global_options.chains << std::endl;
+
+    global_options.fchunk = 0;
+    if (vm.count("fchunk"))
+        global_options.fchunk = vm["fchunk"].as < unsigned
+    int > ();
+    std::cout << "using fchunk: " << global_options.fchunk << std::endl;
+
+    global_options.render = 0;
+    if (vm.count("render"))
+        global_options.render = vm["render"].as < bool > ();
+    std::cout << "using render: " << global_options.render << std::endl;
 
     test_splat();
 
@@ -728,8 +759,17 @@ int main(int argc, char *argv[])
     desc_commandline.add_options()("seed,s", value<unsigned int>(),
         "the random number generator seed to use for this run");
 
-    desc_commandline.add_options()("chunk,c", value<unsigned int>(),
-        "the chunk size used for partitioning the parallel stl algorithms");
+    desc_commandline.add_options()("chains,c", value<unsigned int>(),
+        "the number of chained futures to use in the final field copy step");
+
+    desc_commandline.add_options()("fchunk,f", value<unsigned int>(),
+        "the chunk size used for field copy");
+
+    desc_commandline.add_options()("points,p", value<unsigned int>(),
+        "the number of points to render");
+
+    desc_commandline.add_options()("render,r", value<bool>(),
+        "enable/disable rendering");
 
     // By default this test should run on all available cores
     std::vector<std::string> cfg;
