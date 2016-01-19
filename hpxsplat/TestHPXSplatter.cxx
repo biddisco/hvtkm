@@ -82,7 +82,8 @@ struct options
     unsigned int points{10};
     bool         render{0};
 
-    const int kernel_radius = 4;
+    const int volume_dimension = 16;
+    const int kernel_radius = 1;
     const int kernel_scale = 25.0;
 #ifdef HPX_HAVE_VTK
     vtkSmartPointer<vtkMPIController> controller;
@@ -280,6 +281,8 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
     vit<PointType> pbegin, vit<PointType> pend, const PointType &origin,
     const PointType &spacing, const Id3Type &dimensions, simple_profiler_ptr prof)
 {
+    auto policypar = hpx::parallel::par;
+    auto policyseq = hpx::parallel::seq;
 
     vtkIdType N = std::distance(pbegin, pend);
     // array of points that are the transformed coordinates in voxel space
@@ -306,7 +309,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
         // -----------
         // compute the Footprint information for each input point
         // -----------
-        hpx::parallel::for_each(policy,
+        hpx::parallel::for_each(policypar,
             // begin
             hpx::util::make_zip_iterator(pbegin, std::begin(vox_pts),
                 std::begin(min_max_list), std::begin(neighbour_size)),
@@ -332,7 +335,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
     {
         simple_profiler_ptr scan = hpx::util::make_profiler(prof, "ScanExclusive");
         exclusive_sum.reserve(N + 1);
-        hpx::parallel::exclusive_scan(policy, std::begin(neighbour_size),
+        hpx::parallel::exclusive_scan(policypar, std::begin(neighbour_size),
             std::end(neighbour_size), std::begin(exclusive_sum), 0);
         total_voxpts += *std::prev(exclusive_sum.end());
         exclusive_sum.push_back(total_voxpts);
@@ -360,7 +363,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
     {
         simple_profiler_ptr neighbour_time = hpx::util::make_profiler(prof,
             "neighbour_to_id");
-        hpx::parallel::for_each(policy,
+        hpx::parallel::for_each(policypar,
             // begin
             hpx::util::make_zip_iterator(boost::counting_iterator<vtkIdType>(0),
                 std::begin(neighbour_to_id)),
@@ -456,7 +459,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
         simple_profiler_ptr kernel_compute = hpx::util::make_profiler(prof,
             "kernel_compute");
 
-        hpx::parallel::for_each(policy,
+        hpx::parallel::for_each(policypar,
             // begin
             hpx::util::make_zip_iterator(p3_begin, p4_begin, t2_begin,
                 std::begin(voxel_ids), std::begin(splat_values)),
@@ -476,7 +479,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
 
     {
         simple_profiler_ptr sortbykey = hpx::util::make_profiler(prof, "sort_by_key");
-        hpx::parallel::sort_by_key(policy, std::begin(voxel_ids), std::end(voxel_ids),
+        hpx::parallel::sort_by_key(policypar, std::begin(voxel_ids), std::end(voxel_ids),
             std::begin(splat_values));
     }
 
@@ -489,7 +492,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
             "inclusive_scan");
 
         std::vector<float> reduced_splat_values = splat_values;
-        hpx::parallel::inclusive_scan(policy, std::begin(reduced_splat_values),
+        hpx::parallel::inclusive_scan(policypar, std::begin(reduced_splat_values),
             std::end(reduced_splat_values), std::begin(reduced_splat_values), 0);
         //debug::output<float>("reduced_splat_values ", reduced_splat_values);
     }
@@ -502,7 +505,7 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
     std::pair<vit<vtkIdType>, vit<float>> rbk_result;
     {
         simple_profiler_ptr reducebykey = hpx::util::make_profiler(prof, "reduce_by_key");
-        rbk_result = hpx::parallel::reduce_by_key(policy, std::begin(voxel_ids),
+        rbk_result = hpx::parallel::reduce_by_key(policypar, std::begin(voxel_ids),
             std::end(voxel_ids), std::begin(splat_values), std::begin(voxel_ids),
             std::begin(splat_values));
         //debug::output<vtkIdType>("reduced outkeys ", outkeys);
@@ -526,7 +529,7 @@ void test_splat()
 #endif
 
     // size of final volume (cubed)
-    const int volume_size = 128;
+    const int volume_size = global_options.volume_dimension;
     const int half_size = volume_size / 2;
     // number of points we will create splats for
     const int N = global_options.points;
@@ -550,7 +553,8 @@ void test_splat()
     simple_profiler_ptr main_loop = hpx::util::make_profiler("Splat");
     // parallel policy, we can use one per algorithm, or share one
     // depending on needs
-    auto policy = hpx::parallel::par;
+    auto policypar = hpx::parallel::par;
+    auto policyseq = hpx::parallel::seq;
 //        .with(hpx::parallel::static_chunk_size(best_chunk_size));
 //    auto policy = hpx::parallel::seq;
 
@@ -560,7 +564,7 @@ void test_splat()
         simple_profiler_ptr generate = hpx::util::make_profiler(main_loop, "Generate");
         ptsArray.reserve(N);
         std::back_insert_iterator<std::vector<PointType>> back_ins(ptsArray);
-        hpx::parallel::generate_n(policy, back_ins, N, [&]()
+        hpx::parallel::generate_n(policypar, back_ins, N, [&]()
         {
             return PointType {Dx(gen), Dy(gen), Dz(gen)};
         });
@@ -591,7 +595,7 @@ void test_splat()
         {
             simple_profiler_ptr process = hpx::util::make_profiler(main_loop, "Process");
             // run the main processor to generate voxel points/values
-            result = std::move(ProcessPoints(policy,
+            result = std::move(ProcessPoints(policyseq,
                 p0, p1, origin,
                 spacing, dimensions, process
             ));
@@ -659,7 +663,7 @@ void test_splat()
         vtkSmartPointer<vtkMarchingCubes> isoSurface = vtkSmartPointer<
             vtkMarchingCubes
         >::New();
-        isoSurface->SetValue(0, 0.001);
+        isoSurface->SetValue(0, 0.000025);
         isoSurface->SetInputConnection(imageImport->GetOutputPort());
         isoSurface->Update();
 
