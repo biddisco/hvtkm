@@ -8,11 +8,12 @@
 #include <hpx/parallel/algorithm.hpp>
 #include <hpx/parallel/algorithms/generate.hpp>
 #include <hpx/parallel/algorithms/sort_by_key.hpp>
-#include <hpx/parallel/algorithms/reduce_by_key.hpp>
+#include <hpx/parallel/algorithms/copy.hpp>
+#include <hpx/parallel/algorithms/prefix_copy_if.hpp>
 //
 #include <boost/random/uniform_int_distribution.hpp>
 //
-#define HPX_REDUCE_BY_KEY_TEST_SIZE (1 << 18)
+#define HPX_COPY_IF_TEST_SIZE (1 << 3)
 //
 #include "sort_tests.hpp"
 //
@@ -52,8 +53,8 @@ namespace debug {
         << std::setw(8)  << #d << "\t";
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename ExPolicy, typename Tkey, typename Tval, typename Op, typename HelperOp>
-void test_reduce_by_key1(ExPolicy && policy, Tkey, Tval, const Op &op, const HelperOp &ho)
+template <typename ExPolicy, typename Tval, typename Op>
+void test_copy_if1(ExPolicy && policy, Tval, const Op &op)
 {
     static_assert(
             hpx::parallel::is_execution_policy<ExPolicy>::value,
@@ -67,36 +68,35 @@ void test_reduce_by_key1(ExPolicy && policy, Tkey, Tval, const Op &op, const Hel
     // vector of values, and keys
     std::vector<Tval> values, o_values;
     std::vector<Tval> check_values;
-    values.reserve(HPX_REDUCE_BY_KEY_TEST_SIZE);
+    values.reserve(HPX_COPY_IF_TEST_SIZE);
+    check_values.reserve(HPX_COPY_IF_TEST_SIZE);
+
+    std::vector<Tval> sequence = { 7040, -2743, -5995, 1030, 1, 2, 5, 4 };
 
     // use the default random engine and an uniform distribution for values
     boost::random::mt19937 eng(static_cast<unsigned int>(std::rand()));
     boost::random::uniform_real_distribution<double> distr(rnd_min, rnd_max);
 
-    // use the default random engine and an uniform distribution for keys
-    boost::random::mt19937 engk(static_cast<unsigned int>(std::rand()));
-    boost::random::uniform_real_distribution<double> distrk(0, 256);
-
     // generate test data
-    for (int i=0; i<HPX_REDUCE_BY_KEY_TEST_SIZE; ++i) {
-        Tval value = static_cast<Tval>(distr(eng));
-        if (std::fabs(value-27)<4) {
+    for (int i=0; i<HPX_COPY_IF_TEST_SIZE; ++i) {
+        // Tval value = static_cast<Tval>(distr(eng));
+        Tval value = sequence[i];
+        if (op(value)) {
             check_values.push_back(value);
         }
         values.push_back(value);
     }
+    o_values = values;
 
     boost::uint64_t t = hpx::util::high_resolution_clock::now();
-    // reduce_by_key, blocking when seq, par, par_vec
-    auto result = hpx::parallel::copy_if(
+    // copy_if, blocking when seq, par, par_vec
+    auto result = hpx::parallel::prefix_copy_if(
             std::forward<ExPolicy>(policy),
             values.begin(),
             values.end(),
             values.begin(),
-            [](const Tval &value){
-                return (std::fabs(value-27)<4);
-            }
-            );
+            op
+    );
     boost::uint64_t elapsed = hpx::util::high_resolution_clock::now() - t;
 
     bool is_equal = std::equal(values.begin(), result.second, check_values.begin());
@@ -104,16 +104,18 @@ void test_reduce_by_key1(ExPolicy && policy, Tkey, Tval, const Op &op, const Hel
         //std::cout << "Test Passed\n";
     }
     else {
-        debug::output("output", values.begin(), result.second);
-        debug::output("expected ", check_values);
-        throw std::string ("Problem");
+        debug::output("input   ", values);
+        debug::output("output  ", values.begin(), result.second);
+        debug::output("expected", check_values);
+//        throw std::string ("Problem");
     }
-    HPX_TEST(is_equal);
+//    HPX_TEST(is_equal);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+/*
 template <typename ExPolicy, typename Tkey, typename Tval, typename Op, typename HelperOp>
-void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, const HelperOp &ho)
+void test_copy_if_async(ExPolicy && policy, Tkey, Tval, const Op &op, const HelperOp &ho)
 {
     static_assert(
             hpx::parallel::is_execution_policy<ExPolicy>::value,
@@ -127,8 +129,8 @@ void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, cons
     // vector of values, and keys
     std::vector<Tval> values, o_values;
     std::vector<Tkey> keys, o_keys;
-    values.reserve(HPX_REDUCE_BY_KEY_TEST_SIZE);
-    keys.reserve(HPX_REDUCE_BY_KEY_TEST_SIZE);
+    values.reserve(HPX_COPY_IF_TEST_SIZE);
+    keys.reserve(HPX_COPY_IF_TEST_SIZE);
 
     std::vector<Tval> check_values;
 
@@ -143,7 +145,7 @@ void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, cons
     // generate test data
     int keysize = 0;
     Tkey key=0, helperkey=0, lastkey = 0;
-    for (/* */; keysize<HPX_REDUCE_BY_KEY_TEST_SIZE; )
+    for (; keysize<HPX_COPY_IF_TEST_SIZE; )
     {
         do {
             key = static_cast<Tkey>(distrk(engk));
@@ -154,7 +156,7 @@ void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, cons
         int numkeys = static_cast<Tkey>(distrk(engk)) + 1;
         //
         Tval sum = 0;
-        for (int i=0; i<numkeys && keysize<HPX_REDUCE_BY_KEY_TEST_SIZE; ++i) {
+        for (int i=0; i<numkeys && keysize<HPX_COPY_IF_TEST_SIZE; ++i) {
             Tval value = static_cast<Tval>(distr(eng));
             keys.push_back(key);
             values.push_back(value);
@@ -167,8 +169,8 @@ void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, cons
     o_keys = keys;
 
     boost::uint64_t t = hpx::util::high_resolution_clock::now();
-    // reduce_by_key, blocking when seq, par, par_vec
-    auto fresult = hpx::parallel::reduce_by_key(
+    // copy_if, blocking when seq, par, par_vec
+    auto fresult = hpx::parallel::copy_if(
             std::forward<ExPolicy>(policy),
             keys.begin(), keys.end(),
             values.begin(),
@@ -192,89 +194,90 @@ void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, cons
     }
     HPX_TEST(is_equal);
 }
-
+*/
 ////////////////////////////////////////////////////////////////////////////////
-void test_reduce_by_key1()
+void test_copy_if1()
 {
     using namespace hpx::parallel;
     //
     hpx::util::high_resolution_timer t;
     do {
-        test_reduce_by_key1(seq,     int(), int(), std::equal_to<int>(), [](int key){return key;});
-        test_reduce_by_key1(par,     int(), int(), std::equal_to<int>(), [](int key){return key;});
-        test_reduce_by_key1(par_vec, int(), int(), std::equal_to<int>(), [](int key){return key;});
+        test_copy_if1(par,     int(), [](int val){return val%5==0;});
+/*
+        test_copy_if1(par,     int(), int(), std::equal_to<int>(), [](int key){return key;});
+        test_copy_if1(par_vec, int(), int(), std::equal_to<int>(), [](int key){return key;});
         //
         // default comparison operator (std::equal_to)
-        test_reduce_by_key1(seq,     int(), double(), std::equal_to<double>(), [](int key){return key;});
-        test_reduce_by_key1(par,     int(), double(), std::equal_to<double>(), [](int key){return key;});
-        test_reduce_by_key1(par_vec, int(), double(), std::equal_to<double>(), [](int key){return key;});
+        test_copy_if1(seq,     int(), double(), std::equal_to<double>(), [](int key){return key;});
+        test_copy_if1(par,     int(), double(), std::equal_to<double>(), [](int key){return key;});
+        test_copy_if1(par_vec, int(), double(), std::equal_to<double>(), [](int key){return key;});
         //
-        //
-        test_reduce_by_key1(seq,     double(), double(),
+        test_copy_if1(seq,     double(), double(),
                             [](double a, double b) { return std::floor(a)==std::floor(b); },
                             [](double a){ return std::floor(a); }
         );
-        test_reduce_by_key1(par,     double(), double(),
+        test_copy_if1(par,     double(), double(),
                             [](double a, double b) { return std::floor(a)==std::floor(b); },
                             [](double a){ return std::floor(a); }
         );
-        test_reduce_by_key1(par_vec, double(), double(),
+        test_copy_if1(par_vec, double(), double(),
                             [](double a, double b) { return std::floor(a)==std::floor(b); },
                             [](double a){ return std::floor(a); }
         );
+*/
     } while (t.elapsed()<60);
     //
 
     hpx::util::high_resolution_timer t2;
     do {
-//        test_reduce_by_key_async(seq(task), int(), int(), std::equal_to<int>(), [](int key){return key;});
-//        test_reduce_by_key_async(par(task), int(), int(), std::equal_to<int>(), [](int key){return key;});
+//        test_copy_if_async(seq(task), int(), int(), std::equal_to<int>(), [](int key){return key;});
+//        test_copy_if_async(par(task), int(), int(), std::equal_to<int>(), [](int key){return key;});
         //
-//        test_reduce_by_key_async(seq(task), int(), double(), std::equal_to<double>(), [](int key){return key;});
-//        test_reduce_by_key_async(par(task), int(), double(), std::equal_to<double>(), [](int key){return key;});
+//        test_copy_if_async(seq(task), int(), double(), std::equal_to<double>(), [](int key){return key;});
+//        test_copy_if_async(par(task), int(), double(), std::equal_to<double>(), [](int key){return key;});
     } while (t2.elapsed()<5);
 /*
 */
 /*
-    test_reduce_by_key1(seq,     double(), std::multiplies<double>());
-    test_reduce_by_key1(par,     double(), std::multiplies<double>());
-    test_reduce_by_key1(par_vec, double(), std::multiplies<double>());
+    test_copy_if1(seq,     double(), std::multiplies<double>());
+    test_copy_if1(par,     double(), std::multiplies<double>());
+    test_copy_if1(par_vec, double(), std::multiplies<double>());
 
     // user supplied comparison operator (std::less)
-    test_reduce_by_key1_comp(seq,     int(), std::less<std::size_t>());
-    test_reduce_by_key1_comp(par,     int(), std::less<std::size_t>());
-    test_reduce_by_key1_comp(par_vec, int(), std::less<std::size_t>());
+    test_copy_if1_comp(seq,     int(), std::less<std::size_t>());
+    test_copy_if1_comp(par,     int(), std::less<std::size_t>());
+    test_copy_if1_comp(par_vec, int(), std::less<std::size_t>());
 
     // user supplied comparison operator (std::greater)
-    test_reduce_by_key1_comp(seq,     double(), std::greater<double>());
-    test_reduce_by_key1_comp(par,     double(), std::greater<double>());
-    test_reduce_by_key1_comp(par_vec, double(), std::greater<double>());
+    test_copy_if1_comp(seq,     double(), std::greater<double>());
+    test_copy_if1_comp(par,     double(), std::greater<double>());
+    test_copy_if1_comp(par_vec, double(), std::greater<double>());
 
     // Async execution, default comparison operator
-    test_reduce_by_key1_async(seq(task), int());
-    test_reduce_by_key1_async(par(task), char());
-    test_reduce_by_key1_async(seq(task), double());
-    test_reduce_by_key1_async(par(task), float());
-    test_reduce_by_key1_async_str(seq(task));
-    test_reduce_by_key1_async_str(par(task));
+    test_copy_if1_async(seq(task), int());
+    test_copy_if1_async(par(task), char());
+    test_copy_if1_async(seq(task), double());
+    test_copy_if1_async(par(task), float());
+    test_copy_if1_async_str(seq(task));
+    test_copy_if1_async_str(par(task));
 
     // Async execution, user comparison operator
-    test_reduce_by_key1_async(seq(task), int(),    std::less<unsigned int>());
-    test_reduce_by_key1_async(par(task), char(),   std::less<char>());
+    test_copy_if1_async(seq(task), int(),    std::less<unsigned int>());
+    test_copy_if1_async(par(task), char(),   std::less<char>());
     //
-    test_reduce_by_key1_async(seq(task), double(), std::greater<double>());
-    test_reduce_by_key1_async(par(task), float(),  std::greater<float>());
+    test_copy_if1_async(seq(task), double(), std::greater<double>());
+    test_copy_if1_async(par(task), float(),  std::greater<float>());
     //
-    test_reduce_by_key1_async_str(seq(task), std::greater<std::string>());
-    test_reduce_by_key1_async_str(par(task), std::greater<std::string>());
+    test_copy_if1_async_str(seq(task), std::greater<std::string>());
+    test_copy_if1_async_str(par(task), std::greater<std::string>());
 
-    test_reduce_by_key1(execution_policy(seq),       int());
-    test_reduce_by_key1(execution_policy(par),       int());
-    test_reduce_by_key1(execution_policy(par_vec),   int());
-    test_reduce_by_key1(execution_policy(seq(task)), int());
-    test_reduce_by_key1(execution_policy(par(task)), int());
-    test_reduce_by_key1(execution_policy(seq(task)), std::string());
-    test_reduce_by_key1(execution_policy(par(task)), std::string());
+    test_copy_if1(execution_policy(seq),       int());
+    test_copy_if1(execution_policy(par),       int());
+    test_copy_if1(execution_policy(par_vec),   int());
+    test_copy_if1(execution_policy(seq(task)), int());
+    test_copy_if1(execution_policy(par(task)), int());
+    test_copy_if1(execution_policy(seq(task)), std::string());
+    test_copy_if1(execution_policy(par(task)), std::string());
 */
 }
 
@@ -288,8 +291,8 @@ int hpx_main(boost::program_options::variables_map& vm)
     std::cout << "using seed: " << seed << std::endl;
     std::srand(seed);
 
-    test_reduce_by_key1();
-//    test_reduce_by_key2();
+    test_copy_if1();
+//    test_copy_if2();
     return hpx::finalize();
 }
 

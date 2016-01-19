@@ -139,7 +139,7 @@ void test_reduce_by_key_async(ExPolicy && policy, Tkey, Tval, const Op &op, cons
     static_assert(
             hpx::parallel::is_execution_policy<ExPolicy>::value,
             "hpx::parallel::is_execution_policy<ExPolicy>::value");
-    msg(typeid(ExPolicy).name(), typeid(Tval).name(), typeid(Op).name(), sync);
+    msg(typeid(ExPolicy).name(), typeid(Tval).name(), typeid(Op).name(), async);
     std::cout << "\n";
 
     Tval rnd_min =  -256;
@@ -221,10 +221,14 @@ void test_reduce_by_key1()
     //
     hpx::util::high_resolution_timer t;
     do {
-        test_reduce_by_key1(seq,     int(), int(), std::equal_to<int>(), [](int key){return key;});
+        std::cout << "Seed is " << ++seed << std::endl;
+        std::srand(seed);
+
+//        test_reduce_by_key1(seq,     int(), int(), std::equal_to<int>(), [](int key){return key;});
         test_reduce_by_key1(par,     int(), int(), std::equal_to<int>(), [](int key){return key;});
-        test_reduce_by_key1(par_vec, int(), int(), std::equal_to<int>(), [](int key){return key;});
+//        test_reduce_by_key1(par_vec, int(), int(), std::equal_to<int>(), [](int key){return key;});
         //
+/*
         // default comparison operator (std::equal_to)
         test_reduce_by_key1(seq,     int(), double(), std::equal_to<double>(), [](int key){return key;});
         test_reduce_by_key1(par,     int(), double(), std::equal_to<double>(), [](int key){return key;});
@@ -243,8 +247,9 @@ void test_reduce_by_key1()
                             [](double a, double b) { return std::floor(a)==std::floor(b); },
                             [](double a){ return std::floor(a); }
         );
-    } while (t.elapsed()<5);
-    //
+        */
+    } while (t.elapsed()<50);
+/*    //
     hpx::util::high_resolution_timer t2;
     do {
         test_reduce_by_key_async(seq(task), int(), int(), std::equal_to<int>(), [](int key){return key;});
@@ -253,6 +258,7 @@ void test_reduce_by_key1()
         test_reduce_by_key_async(seq(task), int(), double(), std::equal_to<double>(), [](int key){return key;});
         test_reduce_by_key_async(par(task), int(), double(), std::equal_to<double>(), [](int key){return key;});
     } while (t2.elapsed()<5);
+    */
 }
 
 ////////////////////////////////////////////////////////////////////////////////

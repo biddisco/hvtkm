@@ -488,12 +488,12 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
 //    debug::output<float>("sorted splat_values ", splat_values);
 
     {
-        simple_profiler_ptr inclusive_scan = hpx::util::make_profiler(prof,
-            "inclusive_scan");
+//        simple_profiler_ptr inclusive_scan = hpx::util::make_profiler(prof,
+//            "inclusive_scan");
 
-        std::vector<float> reduced_splat_values = splat_values;
-        hpx::parallel::inclusive_scan(policypar, std::begin(reduced_splat_values),
-            std::end(reduced_splat_values), std::begin(reduced_splat_values), 0);
+//        std::vector<float> reduced_splat_values = splat_values;
+//        hpx::parallel::inclusive_scan(policypar, std::begin(reduced_splat_values),
+//            std::end(reduced_splat_values), std::begin(reduced_splat_values), 0);
         //debug::output<float>("reduced_splat_values ", reduced_splat_values);
     }
 
