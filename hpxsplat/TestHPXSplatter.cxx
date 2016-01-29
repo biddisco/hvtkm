@@ -72,7 +72,35 @@ namespace debug {
 #endif
     }
 };
+// ----------------------------------------------------------------------------
+//#define HPXSPLATTER_ATOMIC
+// ----------------------------------------------------------------------------
+template <typename T>
+struct atomwrapper {
+  std::atomic<T> _a;
 
+  atomwrapper() :_a() {}
+
+  atomwrapper(const std::atomic<T> &a) :_a(a.load()) {}
+
+  atomwrapper(const atomwrapper &other) :_a(other._a.load()) {}
+
+  atomwrapper &operator=(const atomwrapper &other)
+  {
+    _a.store(other._a.load());
+  }
+
+  atomwrapper &operator+=(T val)
+  {
+      auto current = _a.load();
+      while (!_a.compare_exchange_weak(current, current + val));
+  }
+
+  T operator ()() { return _a.load(); }
+  std::atomic<T> &get() { return _a; }
+};
+
+typedef std::vector<atomwrapper<double>> atomic_vector;
 // ----------------------------------------------------------------------------
 struct options
 {
@@ -82,7 +110,7 @@ struct options
     unsigned int points{10};
     bool         render{0};
 
-    const int volume_dimension = 16;
+    const int volume_dimension = 512;
     const int kernel_radius = 1;
     const int kernel_scale = 25.0;
 #ifdef HPX_HAVE_VTK
@@ -141,8 +169,6 @@ public:
 };
 
 // ----------------------------------------------------------------------------
-static std::atomic<int> compute_index{1};
-
 //
 template<typename kernel>
 struct kernel_compute
@@ -196,84 +222,74 @@ struct kernel_compute
     }
 };
 
-// ----------------------------------------------------------------------------
-// rearrange vector using a separate permutation array
-template<typename T1, typename T2>
-void rearrange(std::vector<T1> &data, const std::vector<T2> &perms)
+template<typename kernel>
+struct kernel_compute_atomic
 {
-    std::vector<bool> done(perms.size(), false);
-    for (int i = 0; i < perms.size(); i++) {
-        if (!done[i]) {
-            T1 t = data[i];
-            for (int j = i; ;) {
-                done[j] = true;
+    kernel kernel_;
+    std::array<double, 3> origin_;
+    std::array<double, 3> spacing_;
+    Id3Type dimension_;
+    atomic_vector &atomic_vector_;
+    double Radius2;
+    double ExponentFactor;
+    double ScalingFactor;
+    // Kernel kernel;
 
-                if (perms[j] != i) {
-                    data[j] = data[perms[j]];
-                    j = perms[j];
-                } else {
-                    data[j] = t;
-                    break;
-                }
-            }
+    kernel_compute_atomic(const kernel &k, const std::array<double, 3> &orig,
+        const std::array<double, 3> &s, const Id3Type &dim, atomic_vector &av)
+        : kernel_(k), spacing_(s), origin_(orig), dimension_(dim), atomic_vector_(av)
+    { }
+
+    template<typename T2, typename P>
+    void footprint(const CoordType<P> &worldcoord, const T2 &h,
+        PointType &splatPoint, MinMaxTuple &minmaxtuple, vtkIdType &footprintSize) const
+    {
+        footprintSize = 1;
+        double cutoff = kernel_.maxDistance(h);
+        for (int i = 0; i < 3; i++) {
+            splatPoint[i] = (worldcoord[i] - this->origin_[i]) / this->spacing_[i];
+            std::get<0>(minmaxtuple)[i] = (std::max)(
+                static_cast<vtkIdType>(ceil(splatPoint[i] - cutoff)), vtkIdType(0));
+            std::get<1>(minmaxtuple)[i] = (std::min)(
+                static_cast<vtkIdType>(floor(splatPoint[i] + cutoff)),
+                this->dimension_[i] - 1);
+            footprintSize = footprintSize * (1 + std::get<1>(minmaxtuple)[i] -
+                                             std::get<0>(minmaxtuple)[i]);
         }
     }
-}
 
-// ----------------------------------------------------------------------------
-// rearrange vector using a separate permutation array
-template<typename T2, typename RanIter1>
-void rearrange(RanIter1 listbegin, const std::vector<T2> &perms)
-{
-    typedef typename std::iterator_traits<RanIter1>::value_type T1;
-    std::vector<bool> done(perms.size(), false);
-    for (int i = 0; i < perms.size(); i++) {
-        if (!done[i]) {
-            RanIter1 data_from = std::next(listbegin, i);
-            T1 t = *data_from;
-            for (int j = i; ;) {
-                done[j] = true;
-                RanIter1 data_to = std::next(listbegin, j);
-                if (perms[j] != i) {
-                    *data_to = *std::next(listbegin, perms[j]);
-                    j = perms[j];
-                } else {
-                    *data_to = t;
-                    break;
-                }
-            }
-        }
-    }
-}
-
-// ----------------------------------------------------------------------------
-template<typename ExPolicy, typename T1, typename T2>
-void sortByPerm(ExPolicy policy, std::vector<T1> &list1, std::vector<T2> &list2,
-    simple_profiler_ptr profiler)
-{
-    simple_profiler_ptr sort_time = std::make_shared<hpx::util::simple_profiler>(profiler,
-        "parallel_sort");
-    const auto len = list1.size();
-    if (!len || len != list2.size()) throw;
-
-    // create permutation vector
-    std::vector<size_t> perms;
-    perms.reserve(len);
-    for (size_t i = 0; i < len; i++) {
-        perms.push_back(i);
-    }
-    hpx::parallel::sort(policy, perms.begin(), perms.end(), [&](T1 a, T1 b)
+    template<typename T2, typename P>
+    void operator()(const CoordType<P> &worldcoord,
+        const T2 &kernel_H, const T2 &scale, const vtkIdType localNeighborId,
+        const MinMaxTuple &minmaxtuple, const PointType &splatPoint)
     {
-        return list1[a] < list1[b];
-    });
-
-    {
-        simple_profiler_ptr sort = std::make_shared<hpx::util::simple_profiler>(sort_time,
-            "permute");
-        auto lists_begin = hpx::util::make_zip_iterator(list1.begin(), list2.begin());
-        rearrange(lists_begin, perms);
+        //
+        vtkIdType yRange = 1 + std::get<1>(minmaxtuple)[1] - std::get<0>(minmaxtuple)[1];
+        vtkIdType xRange = 1 + std::get<1>(minmaxtuple)[0] - std::get<0>(minmaxtuple)[0];
+        vtkIdType divisor = yRange * xRange;
+        vtkIdType i = localNeighborId / divisor;
+        vtkIdType remainder = localNeighborId % divisor;
+        vtkIdType j = remainder / xRange;
+        vtkIdType k = remainder % xRange;
+        // note the order of k,j,i
+        Id3Type voxel = {
+            std::get<0>(minmaxtuple)[0] + k,
+            std::get<0>(minmaxtuple)[1] + j,
+            std::get<0>(minmaxtuple)[2] + i };
+        PointType dist = {
+            (splatPoint[0] - voxel[0]) * spacing_[0],
+            (splatPoint[1] - voxel[1]) * spacing_[0],
+            (splatPoint[2] - voxel[2]) * spacing_[0] };
+        double dist2 = std::inner_product(
+            std::begin(dist), std::end(dist), std::begin(dist), 0.0);
+        // Compute splat value using the kernel distance_squared function
+        double splatValue = kernel_.w2(kernel_H, dist2);
+        //
+        vtkIdType neighborVoxelId =
+            (voxel[2] * dimension_[0] * dimension_[1]) + (voxel[1] * dimension_[0]) + voxel[0];
+        atomic_vector_[neighborVoxelId] += splatValue;
     }
-}
+};
 
 // ----------------------------------------------------------------------------
 template<typename ExPolicy>
@@ -536,11 +552,20 @@ void test_splat()
     // point params
 
     // create a field array to store the data in
-    std::vector<double> fieldArray(volume_size * volume_size * volume_size, 0);
     // origin and spacing of volume
     PointType origin = {0.0, 0.0, 0.0};
     PointType spacing = {1.0, 1.0, 1.0};
     Id3Type dimensions = {volume_size, volume_size, volume_size};
+
+#ifdef HPXSPLATTER_ATOMIC
+    std::atomic<double> zero(0);
+    using gaussian = vtkm::worklet::splatkernels::Gaussian<3>;
+    gaussian gaussiansplat{1.0};
+    atomic_vector fieldArray(volume_size * volume_size * volume_size, zero);
+    kernel_compute_atomic<gaussian> splatter(gaussiansplat, origin, spacing, dimensions, fieldArray);
+#else
+    std::vector<double> fieldArray(volume_size * volume_size * volume_size, 0.0);
+#endif
 
     // random generator between 0 and volume size
     std::default_random_engine gen(global_options.seed);
@@ -575,6 +600,7 @@ void test_splat()
         return ptA[2] < ptB[2];
     });
 
+#ifndef HPXSPLATTER_ATOMIC
     typedef hpx::util::zip_iterator<vit<vtkIdType>, vit<float>> zip_it;
     typedef zip_it::reference zip_ref;
     //
@@ -641,6 +667,23 @@ void test_splat()
     // wait for the final stage to complete
     final_future.get();
     main_loop->done();
+#else
+    hpx::parallel::for_each(hpx::parallel::par, ptsArray.begin(), ptsArray.end(),
+        [&splatter](const PointType &ptA)
+        {
+            PointType splatPoint;
+            MinMaxTuple minmaxtuple;
+            vtkIdType footprintSize;
+            splatter.footprint(ptA, global_options.kernel_radius, splatPoint, minmaxtuple, footprintSize);
+
+            for (int i=0; i<footprintSize; ++i) {
+                splatter.operator()(
+                    ptA, global_options.kernel_radius, global_options.kernel_scale,
+                    i, minmaxtuple, splatPoint);
+            }
+        }
+    );
+#endif
 
     std::cout << "time " << main_timer.elapsed() << " seconds" << std::endl;
 
