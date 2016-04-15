@@ -94,6 +94,7 @@ struct atomwrapper {
   {
       auto current = _a.load();
       while (!_a.compare_exchange_weak(current, current + val));
+      return *this;
   }
 
   T operator ()() { return _a.load(); }
@@ -110,8 +111,8 @@ struct options
     unsigned int points{10};
     bool         render{0};
 
-    const int volume_dimension = 512;
-    const int kernel_radius = 1;
+    const int volume_dimension = 128;
+    const int kernel_radius = 3;
     const int kernel_scale = 25.0;
 #ifdef HPX_HAVE_VTK
     vtkSmartPointer<vtkMPIController> controller;
@@ -706,7 +707,7 @@ void test_splat()
         vtkSmartPointer<vtkMarchingCubes> isoSurface = vtkSmartPointer<
             vtkMarchingCubes
         >::New();
-        isoSurface->SetValue(0, 0.000025);
+        isoSurface->SetValue(0, 0.0025);
         isoSurface->SetInputConnection(imageImport->GetOutputPort());
         isoSurface->Update();
 
