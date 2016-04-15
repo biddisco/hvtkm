@@ -450,11 +450,13 @@ std::pair<std::vector<vtkIdType>, std::vector<float>> ProcessPoints(ExPolicy &&p
     auto t1_begin = hpx::util::make_zip_iterator(p1_begin, p2_begin,
         boost::counting_iterator<vtkIdType>(0));
     //
-    auto t2_begin = hpx::util::make_transform_iterator(t1_begin, [](zip_iterator3 it)
-    {
+    auto local_lambda = [](zip_iterator3 it)
+      {
         using hpx::util::get;
         return (get<2>(*it) - get<1>(*it)) % get<0>(*it);
-    });
+      };
+
+    auto t2_begin = hpx::util::make_transform_iterator(t1_begin, std::ref(local_lambda));
     // output
     //debug::output<decltype(t2_begin)>("Array offsets", t2_begin, t2_begin+neighbour_to_id.size());
 
