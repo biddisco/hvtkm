@@ -56,51 +56,6 @@ if (ParaView_FOUND)
 endif()
 
 #--------------------------------------------------
-# hpx test
-#--------------------------------------------------
-aDD_EXECUTABLE(sort_by_key
-        sort_by_key.cpp
-        )
-
-hpx_setup_target(sort_by_key)
-
-#--------------------------------------------------
-# HPX test
-#--------------------------------------------------
-ADD_EXECUTABLE(exclusive_scan_problem
-        exclusive_scan_problem.cpp
-        )
-
-hpx_setup_target(exclusive_scan_problem)
-
-#--------------------------------------------------
-# HPX test
-#--------------------------------------------------
-ADD_EXECUTABLE(reduce_by_key
-  reduce_by_key.cpp
-)
-
-hpx_setup_target(reduce_by_key)
-
-#--------------------------------------------------
-# HPX test
-#--------------------------------------------------
-ADD_EXECUTABLE(copy_if
-        copy_if.cpp
-)
-
-hpx_setup_target(copy_if)
-
-#--------------------------------------------------
-# HPX test
-#--------------------------------------------------
-ADD_EXECUTABLE(sort_by_key_test
-        sort_by_key_test.cpp
-        sort_by_key_test.cpp)
-
-hpx_setup_target(sort_by_key_test)
-
-#--------------------------------------------------
 # HPX test
 #--------------------------------------------------
 ADD_EXECUTABLE(TestHPXSplatter 
