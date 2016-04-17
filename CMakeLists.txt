@@ -98,7 +98,8 @@ SET (CMAKE_ARCHIVE_OUTPUT_DIRECTORY
 #
 set(HPX_WITH_PARCELPORT_MPI ON CACHE BOOL "")
 set(HPX_WITH_PARCELPORT_TCP ON CACHE BOOL "")
-set(HPX_WITH_TESTS          OFF CACHE BOOL "")
+set(HPX_WITH_TESTS          ON CACHE BOOL "")
+set(HPX_WITH_TESTS_UNIT     ON CACHE BOOL "")
 set(HPX_WITH_EXAMPLES       OFF CACHE BOOL "")
 #
 # Some defaults we set for VTK-m
@@ -123,7 +124,7 @@ message("-----------------------------")
 
 message("-----------------------------")
 message("HPX_sort")
-add_subproject(HPX_sort HPX_sort)
+#add_subproject(HPX_sort HPX_sort)
 message("-----------------------------")
 
 message("-----------------------------")
@@ -133,22 +134,17 @@ message("-----------------------------")
 
 message("-----------------------------")
 message("sort_parallel")
-add_subproject(sort_parallel sort_parallel)
+#add_subproject(sort_parallel sort_parallel)
 message("-----------------------------")
 
 message("-----------------------------")
 message("VTKm")
-add_subproject(VTKm vtkm)
+#add_subproject(VTKm vtkm)
 message("-----------------------------")
 
 message("-----------------------------")
 message("vtkmtest")
-add_subproject(vtkmtest vtkmtest)
-message("-----------------------------")
-
-message("-----------------------------")
-message("hpxsplat")
-add_subproject(hpxsplat hpxsplat)
+#add_subproject(vtkmtest vtkmtest)
 message("-----------------------------")
 
 ##--------------------------------------------------
